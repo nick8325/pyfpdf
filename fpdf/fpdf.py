@@ -22,6 +22,7 @@ from __future__ import division, with_statement
 
 from datetime import datetime
 from functools import wraps
+from io import StringIO
 import errno
 import math
 import os
@@ -110,7 +111,7 @@ class FPDF(object):
         self.offsets = {}               # array of object offsets
         self.page = 0                   # current page number
         self.n = 2                      # current object number
-        self.buffer = ''                # buffer holding in-memory PDF
+        self.buffer = StringIO()        # buffer holding in-memory PDF
         self.pages = {}                 # array containing pages and metadata
         self.state = 0                  # current document state
         self.fonts = {}                 # array of used fonts
@@ -1273,9 +1274,9 @@ class FPDF(object):
         if PY3K:
             # manage binary data as latin1 until PEP461 or similar is
             # implemented
-            buffer = self.buffer.encode("latin1")
+            buffer = self.buffer.getvalue().encode("latin1")
         else:
-            buffer = self.buffer
+            buffer = self.buffer.getvalue()
         if dest in ('I', 'D'):
             # Python < 3 writes byte data transparently without "buffer"
             stdout = getattr(sys.stdout, 'buffer', sys.stdout)
@@ -1312,12 +1313,12 @@ class FPDF(object):
             r = UTF8ToUTF16BE(str(nb), False)
             for n in range(1, nb + 1):
                 self.pages[n]["content"] = \
-                    self.pages[n]["content"].replace(alias, r)
+                    StringIO(self.pages[n]["content"].getvalue().replace(alias, r))
             # Now repeat for no pages in non-subset fonts
             for n in range(1, nb + 1):
                 self.pages[n]["content"] = \
-                    self.pages[n]["content"] \
-                        .replace(self.str_alias_nb_pages, str(nb))
+                    StringIO(self.pages[n]["content"].getvalue() \
+                        .replace(self.str_alias_nb_pages, str(nb)))
         if self.def_orientation == 'P':
             dw_pt = self.dw_pt
             dh_pt = self.dh_pt
@@ -1368,16 +1369,16 @@ class FPDF(object):
             if self.compress:
                 # manage binary data as latin1 until PEP461 or similar is
                 # implemented
-                p = content.encode("latin1") if PY3K else content
+                p = content.getvalue().encode("latin1") if PY3K else content
                 p = zlib.compress(p)
             else:
-                p = content
+                p = content.getvalue()
             self._newobj()
             self._out('<<' + filter + '/Length ' + str(len(p)) + '>>')
             self._putstream(p)
             self._out('endobj')
         # Pages root
-        self.offsets[1] = len(self.buffer)
+        self.offsets[1] = self.buffer.tell()
         self._out('1 0 obj')
         self._out('<</Type /Pages')
         kids = '/Kids ['
@@ -1811,7 +1812,7 @@ class FPDF(object):
         self._putimages()
 
         # Resource dictionary
-        self.offsets[2] = len(self.buffer)
+        self.offsets[2] = self.buffer.tell()
         self._out('2 0 obj')
         self._out('<<')
         self._putresourcedict()
@@ -1884,7 +1885,7 @@ class FPDF(object):
         self._out('>>')
         self._out('endobj')
         # Cross-ref
-        o = len(self.buffer)
+        o = self.buffer.tell()
         self._out('xref')
         self._out('0 ' + (str(self.n + 1)))
         self._out('0000000000 65535 f ')
@@ -1902,7 +1903,7 @@ class FPDF(object):
 
     def _beginpage(self, orientation, format, same):
         self.page             += 1
-        self.pages[self.page]  = {"content": ""}
+        self.pages[self.page]  = {"content": StringIO()}
         self.state             = 2
         self.x                 = self.l_margin
         self.y                 = self.t_margin
@@ -1945,7 +1946,7 @@ class FPDF(object):
     def _newobj(self):
         # Begin a new object
         self.n += 1
-        self.offsets[self.n] = len(self.buffer)
+        self.offsets[self.n] = self.buffer.tell()
         self._out(str(self.n) + ' 0 obj')
 
     def _dounderline(self, x, y, txt):
@@ -2015,9 +2016,9 @@ class FPDF(object):
         elif not isinstance(s, basestring):
             s = str(s)
         if (self.state == 2):
-            self.pages[self.page]["content"] += (s + "\n")
+            self.pages[self.page]["content"].write(s + "\n")
         else:
-            self.buffer += (s + "\n")
+            self.buffer.write(s + "\n")
 
 __all__ = [
     'FPDF', 'load_cache', 'get_page_format', 'PAGE_FORMATS'
